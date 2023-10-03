@@ -49,6 +49,15 @@ control MyIngress(inout headers hdr,
     apply {
 
         /* TODO 3:*/
+        // If input port is 1 => output port 2
+        if (standard_metadata.ingress_port == 1){
+            standard_metadata.egress_spec = 2;
+        }
+
+        // If input port is 2 => output port 1
+        else if (standard_metadata.ingress_port == 2){
+            standard_metadata.egress_spec = 1;
+        }
         /* Solution 1: Without tables, write the algorithm directly here*/
         /* Solution 2: Apply the table you use */
 

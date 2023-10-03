@@ -1,1 +1,3 @@
 # TODO: populate table with forwarding rules
+table_add repeater forward 1 => 2
+table_add repeater forward 2 => 1
