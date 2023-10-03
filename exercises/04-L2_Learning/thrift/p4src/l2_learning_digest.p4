@@ -20,10 +20,17 @@ header ethernet_t {
 }
 
 //TODO 2: define the learn_t struct that you will digest
+struct learn_t {
+
+    bit<48> srcAddr;
+    bit<9>  ingress_port;
+
+}
 
 struct metadata {
     /* empty */
     //TODO 3: delcare one learn_t variable
+    learn_t learn;
 }
 
 struct headers {
@@ -71,11 +78,70 @@ control MyIngress(inout headers hdr,
 
     //TODO 4: copy the ingress code from the previous exercise. Modify the `mac_learn` action so now it digest the learn metadata
     // struct you defined.
+    action mac_learn(){
+        meta.learn.srcAddr = hdr.ethernet.srcAddr;
+        meta.learn.ingress_port = standard_metadata.ingress_port;
+        digest<learn_t>(1, meta.learn);
+    }
+
+    table smac {
+
+        key = {
+            hdr.ethernet.srcAddr: exact;
+        }
+
+        actions = {
+            mac_learn;
+            NoAction;
+        }
+        size = 256;
+        default_action = mac_learn;
+    }
+
+    action forward(bit<9> egress_port) {
+        standard_metadata.egress_spec = egress_port;
+    }
+
+    table dmac {
+        key = {
+            hdr.ethernet.dstAddr: exact;
+        }
+
+        actions = {
+            forward;
+            NoAction;
+        }
+        size = 256;
+        default_action = NoAction;
+    }
+
+    action set_mcast_grp(bit<16> mcast_grp) {
+        standard_metadata.mcast_grp = mcast_grp;
+    }
+
+    table broadcast {
+        key = {
+            standard_metadata.ingress_port: exact;
+        }
+
+        actions = {
+            set_mcast_grp;
+            NoAction;
+        }
+        size = 256;
+        default_action = NoAction;
+    }
 
     apply {
 
         //TODO 5: copy the logic from the previous exercise
-
+        smac.apply();
+        if (dmac.apply().hit){
+            //
+        }
+        else {
+            broadcast.apply();
+        }
     }
 }
 
