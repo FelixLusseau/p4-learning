@@ -68,12 +68,53 @@ control MyIngress(inout headers hdr,
 
     //TODO 2: define a forwarding match-action table like the one from the previous exercise. This time you can remove
     //        the broadcast action, or make it empty.
+    action forward(bit<9> egress_port) {
+        standard_metadata.egress_spec = egress_port;
+    }
+
+    action broadcast() {
+        //Empty action that was not necessary, we just call it when there is a table miss
+    }
+
+    table dmac {
+        key = {
+            hdr.ethernet.dstAddr: exact;
+        }
+
+        actions = {
+            forward;
+            broadcast;
+            NoAction;
+        }
+        size = 256;
+        default_action = NoAction;
+    }
 
     //TODO 3: define a new match-action table that matches to the ingress_port and calls an action to set the multicast group
+    action set_multicast_group(bit<16> mcast_grp) {
+        standard_metadata.mcast_grp = mcast_grp;
+    }
+    
+    table smac {
+        key = {
+            standard_metadata.ingress_port: exact;
+        }
+
+        actions = {
+            set_multicast_group;
+            NoAction;
+        }
+        size = 32;
+        default_action = NoAction;
+    }
 
     apply {
         //TODO 5: Build your control logic: apply the normal forwarding table,
         //        if there is a miss apply the second table to set the multicast group.
+        if (dmac.apply().hit) {
+        } else {
+            smac.apply();
+        }
 
     }
 }
