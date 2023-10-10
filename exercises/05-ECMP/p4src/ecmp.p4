@@ -27,22 +27,68 @@ control MyIngress(inout headers hdr,
 
     action ecmp_group(bit<14> ecmp_group_id, bit<16> num_nhops){
         //TODO 6: define the ecmp_group action, here you need to hash the 5-tuple mod num_ports and safe it in metadata
+        hash(meta.ecmp_hash,
+	    HashAlgorithm.crc16,
+	    (bit<1>)0, 
+        { hdr.ipv4.srcAddr, 
+        hdr.ipv4.dstAddr, 
+        hdr.tcp.srcPort, 
+        hdr.tcp.dstPort, 
+        hdr.ipv4.protocol },
+        num_nhops);
+
+        meta.ecmp_group_id = ecmp_group_id;
     }
 
     action set_nhop(macAddr_t dstAddr, egressSpec_t port) {
         //TODO 5: Define the set_nhop action. You can copy it from the previous exercise, they are the same.
+        standard_metadata.egress_spec = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
     table ecmp_group_to_nhop {
         //TODO 7: define the ecmp table, this table is only called when multiple hops are available
+        key = {
+            meta.ecmp_group_id: exact;
+            meta.ecmp_hash: exact;
+        }
+
+        actions = {
+            drop;
+            set_nhop;
+        }
+
+        default_action = drop;
+        size = 1024;
     }
 
     table ipv4_lpm {
         //TODO 4: define the ip forwarding table
+        key = {
+            hdr.ipv4.dstAddr: lpm;
+        }
+
+        actions = {
+            set_nhop;
+            ecmp_group;
+            drop;
+        }
+
+        default_action = drop;
+        size = 1024;
     }
 
     apply {
         //TODO 8: implement the ingress logic: check validities, apply first table, and if needed the second table.
+        if(hdr.ipv4.isValid()){
+            switch (ipv4_lpm.apply().action_run){
+                ecmp_group: {
+                    ecmp_group_to_nhop.apply();
+                }
+            }
+        }
     }
 }
 

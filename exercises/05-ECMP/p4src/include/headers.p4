@@ -58,8 +58,7 @@ struct headers {
 }
 
 struct metadata {
-   //TODO 6.1: define the metadata needed to store the ecmp_group_id and the hash output
+    //TODO 6.1: define the metadata needed to store the ecmp_group_id and the hash output
+    bit<14> ecmp_hash;
+    bit<14> ecmp_group_id;
 }
-
-
-
