@@ -53,12 +53,14 @@ class Controller():
         self.set_table_defaults()
         self.update_path(first_call=True)
         for sw_name in self.subcontrollers.keys():
+            print("Starting subcontroller of {}".format(sw_name))
             self.fill_check_port_table(sw_name)
             self.loop(sw_name)
 
     def connect_to_switches(self):
         for p4switch in self.topo.get_p4switches():
             thrift_port = self.topo.get_thrift_port(p4switch)
+            print("Creating subcontroller for {}".format(p4switch))
             self.subcontrollers[p4switch] = SimpleSwitchThriftAPI(thrift_port)
 
     def reset_states(self):
@@ -81,10 +83,7 @@ class Controller():
             if v_node.get("isHost", False):
                 continue
             port = str(self.topo.get_edge_data(u, v)["port1"])
-            #TODO4 : Give each port a probability of 50% to count each incoming packet
-            # subcontroller.table_add("check_port", "check_if_count", [port], "0.5")
-            proba = 50
-            self.table_update(sw_name, "check_port", "check_if_count", [str(port)], [str(proba)])
+            self.table_update(sw_name, "check_port", "check_if_count", [port], ["100"], force_add=True)
 
     #### END START FUNCTION ####
 
@@ -128,20 +127,23 @@ class Controller():
         i=0
         for sample in range(num_samples):
             # get and convert first 8 bits/1byte (value1)
+            print("Sample {} is {}".format(i,sample))
             value1 = struct.unpack(">c", msg[starting_index : starting_index + 1])
+            #print("raw value in {}".format(value1))
             starting_index += 1  # move on to next byte
             value1 = int.from_bytes(value1[0], "big")
 
-            #TODO4 : Finish the unpacking of the digest, the first value is already unpacked.
+            # get and convert second 8 bits/1byte (value1)
             value2 = struct.unpack(">c", msg[starting_index : starting_index + 1])
+            #print("raw value in {}".format(value2))
             starting_index += 1  # move on to next byte
             value2 = int.from_bytes(value2[0], "big")
 
-            port = struct.unpack(">c", msg[starting_index : starting_index + 2])
-            starting_index += 2  # move on to next 2 bytes
-            port = int.from_bytes(port[0], "big")
+            port = struct.unpack(">h", msg[starting_index : starting_index + 2])
+            port = port[0]
+            digests.append((value1, value2, port))
 
-            digests.append(value1, value2, port)
+            starting_index += 2
 
         # return lists with separated digest types
         return digests
@@ -163,6 +165,9 @@ class Controller():
             #         sw_name, value_in_d, value_out_d, port_d
             #     )
             # )
+            print("\nSwitch {}, Port {} Compteur in : {}, compteur out : {} ".format(sw_name, port_d,value_in_d,value_out_d))
+            
+
             reliability = value_in_d / value_out_d
             info = self.topo.get_intfs(fields=["port"])[sw_name]
             
@@ -178,12 +183,25 @@ class Controller():
                     self.edge_2_digest_count[edge_id] = self.edge_2_digest_count[edge_id] + 1
                     break
 
-            #TODO4 : Check if the link is unreliable in at least one direction and has not already been debuffed, 
-            if (reliability != 1 and self.topo[neighbor][sw_name]["weight"] < MAX_WEIGHT):
-                #TODO4 : then apply the debuff to its weight and update the paths
-                self.topo[neighbor][sw_name]["weight"] += DEBUFF
-                self.update_path()
+
+            full_link_reliability = (
+                self.edge_2_reliability[edge_id] and self.edge_2_reliability[other_edge_id]
+            )
+            print("Full link reliability : {}".format(full_link_reliability))
             
+            if not full_link_reliability :
+                
+                if self.topo[sw_name][neighbor]["weight"] < MAX_WEIGHT:
+                    self.topo[sw_name][neighbor]["weight"] = self.topo[sw_name][neighbor]["weight"] + DEBUFF
+                    
+                    print(
+                        "\033[2;31;43m[INFO_CTRL]\033[0;0m {}-{} is not reliable and must be debuffed : {}".format(
+                            neighbor, sw_name, self.topo[sw_name][neighbor]["weight"]
+                        )
+                    )
+                    self.update_path()
+            # else : 
+            #     print("\033[2;31;43m[INFO_CTRL]\033[0;0m {}-{} is reliable".format(sw_name,neighbor))
 
     # Waits to receive a digest message from the
     # switch called sw_name (e.g., from "s1")
@@ -281,6 +299,7 @@ class Controller():
                                     ecmp_group_id = switch_ecmp_groups[sw_name].get(
                                         tuple(dst_macs_ports), None
                                     )
+                                    print("table_add at {}:".format(sw_name))
                                     self.table_update(
                                         sw_name,
                                         "ipv4_lpm",
@@ -300,6 +319,7 @@ class Controller():
 
                                     # add group
                                     for i, (mac, port) in enumerate(dst_macs_ports):
+                                        print("table_add at {}:".format(sw_name))
                                         self.table_update(
                                             sw_name,
                                             "ecmp_group_to_nhop",
